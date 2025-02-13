@@ -785,9 +785,11 @@ const getProductsWithScore = async (data) => {
           AND subcat.sub_categ_name NOT ILIKE '%homme%' 
           AND subcat.sub_categ_name NOT ILIKE '%femme%') 
           OR (cat.category_name = 'homme' AND (${gender} IS NULL OR ${gender} = 'male') 
-            AND subcat.sub_categ_name NOT ILIKE '%femme%') 
+            AND subcat.sub_categ_name NOT ILIKE '%femme%'
+            AND subcat.sub_categ_name NOT ILIKE 'femme') 
           OR (cat.category_name = 'femme' AND (${gender} IS NULL OR ${gender} = 'female') 
-            AND subcat.sub_categ_name NOT ILIKE '%homme%')
+            AND subcat.sub_categ_name NOT ILIKE '%homme%'
+            AND subcat.sub_categ_name NOT ILIKE 'homme')
         )
       ` : Prisma.empty;
 

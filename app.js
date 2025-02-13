@@ -44,7 +44,7 @@ app.listen(PORT, () => {
 const { startConsumers } = require("./rabbitmq/consumer");
 
 // Start consuming messages from RabbitMQ queues
-startConsumers();
+// startConsumers();
 
 require('./triggers/global.listener.js');
 

@@ -791,9 +791,9 @@ const getProductsWithScore = async (data) => {
         )
       ` : Prisma.empty;
 
-    let baseQuery = Prisma.sql`
+      let baseQuery = Prisma.sql`
       WITH filtered_products AS (
-          SELECT
+          SELECT DISTINCT ON (p.url) -- Ensures unique URLs
               p.id_product,
               p.product_name,
               p.image_url,
@@ -815,7 +815,7 @@ const getProductsWithScore = async (data) => {
           JOIN subcategory subcat ON p.id_sub_categ = subcat.id_sub_categ::text
           WHERE p.availability = true
           AND p.offer_id != 3707
-          AND P.is_image_valid = true
+          AND p.is_image_valid = true
           AND (b.localisation LIKE '%' || ${country} || '%' OR b.localisation = 'worldwide')
           AND (p.season IS NULL OR p.season::text = ANY(ARRAY[${Prisma.join(seasons)}]))
           ${genderQuery}
@@ -873,11 +873,10 @@ const getProductsWithScore = async (data) => {
               0.0005 * COALESCE(fp.conversion_rate, 0) + 
               0.2 * CAST(
                   CASE 
-                    WHEN  is_fav_brand.is_fav_brand THEN 1 ELSE 0 
+                    WHEN is_fav_brand.is_fav_brand THEN 1 ELSE 0 
                   END AS FLOAT
               )
           ) * 100 AS score_final
-
         FROM filtered_products fp
         LEFT JOIN is_sale_brand ON fp.id_product = is_sale_brand.id_product
         LEFT JOIN is_fav_brand ON fp.id_product = is_fav_brand.id_product
@@ -890,7 +889,7 @@ const getProductsWithScore = async (data) => {
         ORDER BY fp.id_product
       )
     `
-
+    
     const nextProductQuery = nextProduct ? Prisma.sql`
       WHERE (sp.score_final < ${Number(nextScore)} OR (sp.score_final = ${Number(nextScore)} AND sp.id_product > ${nextProduct}))
     ` : Prisma.empty;

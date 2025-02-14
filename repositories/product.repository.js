@@ -785,11 +785,9 @@ const getProductsWithScore = async (data) => {
           AND subcat.sub_categ_name NOT ILIKE '%homme%' 
           AND subcat.sub_categ_name NOT ILIKE '%femme%') 
           OR (cat.category_name = 'homme' AND (${gender} IS NULL OR ${gender} = 'male') 
-            AND subcat.sub_categ_name NOT ILIKE '%femme%'
-            AND subcat.sub_categ_name NOT ILIKE 'femme') 
+            AND subcat.sub_categ_name NOT ILIKE '%femme%') 
           OR (cat.category_name = 'femme' AND (${gender} IS NULL OR ${gender} = 'female') 
-            AND subcat.sub_categ_name NOT ILIKE '%homme%'
-            AND subcat.sub_categ_name NOT ILIKE 'homme')
+            AND subcat.sub_categ_name NOT ILIKE '%homme%')
         )
       ` : Prisma.empty;
 
@@ -804,6 +802,7 @@ const getProductsWithScore = async (data) => {
               p.id_sub_categ,
               p.total_sales,
               p.conversion_rate,
+              p.is_image_valid,
               p.season,
               p.url,
               jsonb_build_object('id', p.id_categ, 'category_name', cat.category_name) AS categ,
@@ -816,6 +815,7 @@ const getProductsWithScore = async (data) => {
           JOIN subcategory subcat ON p.id_sub_categ = subcat.id_sub_categ::text
           WHERE p.availability = true
           AND p.offer_id != 3707
+          AND P.is_image_valid = true
           AND (b.localisation LIKE '%' || ${country} || '%' OR b.localisation = 'worldwide')
           AND (p.season IS NULL OR p.season::text = ANY(ARRAY[${Prisma.join(seasons)}]))
           ${genderQuery}

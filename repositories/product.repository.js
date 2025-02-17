@@ -882,16 +882,17 @@ const getProductsWithScore = async (data) => {
   `;
   
   const nextProductQuery = nextProduct ? Prisma.sql`
-      WHERE (rp.score_final < ${Number(nextScore)} OR (rp.score_final = ${Number(nextScore)} AND rp.id_product > ${nextProduct}))
-  ` : Prisma.empty;
-  
-  baseQuery = Prisma.sql`${baseQuery}
-      SELECT rp.* FROM ranked_products rp
-      ${nextProductQuery} 
-      WHERE rp.row_num <= 10
-      ORDER BY rp.score_final DESC, rp.id_product ASC 
-      LIMIT ${Number(set)};
-  `;
+  AND (rp.score_final < ${Number(nextScore)} OR (rp.score_final = ${Number(nextScore)} AND rp.id_product > ${nextProduct}))
+` : Prisma.empty;
+
+baseQuery = Prisma.sql`
+  ${baseQuery}
+  SELECT rp.* FROM ranked_products rp
+  WHERE rp.row_num <= 10
+  ${nextProductQuery}
+  ORDER BY rp.score_final DESC, rp.id_product ASC
+  LIMIT ${Number(set)};
+`;
   
     const result = await db.$queryRaw(baseQuery);
 

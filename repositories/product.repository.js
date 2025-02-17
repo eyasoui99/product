@@ -793,7 +793,7 @@ const getProductsWithScore = async (data) => {
 
       let baseQuery = Prisma.sql`
       WITH filtered_products AS (
-          SELECT DISTINCT ON (p.url)
+          SELECT DISTINCT ON (p.url) -- Ensures unique URLs
               p.id_product,
               p.product_name,
               p.image_url,
@@ -804,6 +804,7 @@ const getProductsWithScore = async (data) => {
               p.conversion_rate,
               p.is_image_valid,
               p.season,
+              p.price,
               p.url,
               jsonb_build_object('id', p.id_categ, 'category_name', cat.category_name) AS categ,
               jsonb_build_object('id', p.id_sub_categ, 'subcategory_name', subcat.sub_categ_name) AS sub_categ,
@@ -830,70 +831,75 @@ const getProductsWithScore = async (data) => {
       is_sale_brand AS (
           SELECT DISTINCT ON (fp.id_product) 
               fp.id_product,
-              EXISTS (
-                  SELECT 1 FROM conversions c 
-                  WHERE c.influencer = ${uid} AND c.offerid = fp.offer_id
-              ) AS is_sale_brand
+              CASE
+                  WHEN EXISTS (
+                      SELECT 1 FROM conversions c 
+                      WHERE c.influencer = ${uid} AND c.offerid = fp.offer_id
+                  )
+                  THEN true ELSE false
+              END AS is_sale_brand
           FROM filtered_products fp
       ),
       is_fav_brand AS (
-          SELECT DISTINCT ON (fp.id_product)
+        SELECT DISTINCT ON (fp.id_product)
               fp.id_product,
               ${infOfferIdsQuery}
           FROM filtered_products fp
       ),
       kpis AS (
-          SELECT
-              k.*
-          FROM infs_categ_kpis k
-          JOIN filtered_products fp ON fp.categ->>'id' = k.category AND fp.sub_categ->>'id' = k.subcategory
-          WHERE k.uid = ${uid}
+        SELECT
+            k.*
+        FROM infs_categ_kpis k
+        JOIN filtered_products fp ON fp.categ->>'id' = k.category AND fp.sub_categ->>'id' = k.subcategory
+        WHERE k.uid = ${uid}
       ),
       scored_products AS (
-          SELECT
-              fp.*,
-              COALESCE(kpis.sales_kpi, 0) AS sales_kpi,
-              COALESCE(kpis.univers_kpi, 0) AS univers_kpi,
-              COALESCE(kpis.infs_themes_kpi, 0) AS infs_themes_kpi,
-              is_sale_brand.is_sale_brand,
-              is_fav_brand.is_fav_brand,
-              (
-                  0.3 * COALESCE(kpis.sales_kpi, 0) +
-                  0.2 * CASE WHEN is_sale_brand.is_sale_brand THEN 1 ELSE 0 END +
-                  0.15 * COALESCE(kpis.univers_kpi, 0) + 
-                  0.10 * COALESCE(kpis.infs_themes_kpi, 0) + 
-                  0.0005 * COALESCE(fp.conversion_rate, 0) + 
-                  0.2 * CASE WHEN is_fav_brand.is_fav_brand THEN 1 ELSE 0 END
-              ) * 100 AS score_final
-          FROM filtered_products fp
-          LEFT JOIN is_sale_brand ON fp.id_product = is_sale_brand.id_product
-          LEFT JOIN is_fav_brand ON fp.id_product = is_fav_brand.id_product
-          LEFT JOIN kpis ON fp.categ->>'id' = kpis.category AND fp.sub_categ->>'id' = kpis.subcategory
-          WHERE fp.id_product NOT IN (
-              SELECT id_product FROM conversions c 
-              WHERE c.influencer = ${uid} AND id_product IS NOT NULL
-          )
-      ),
-      ranked_products AS (
-          SELECT *,
-              ROW_NUMBER() OVER (PARTITION BY score_final ORDER BY RANDOM()) AS row_num
-          FROM scored_products
+        SELECT DISTINCT ON (fp.id_product)
+          fp.*,
+          COALESCE(kpis.sales_kpi, 0) AS sales_kpi,
+          COALESCE(kpis.univers_kpi, 0) AS univers_kpi,
+          COALESCE(kpis.infs_themes_kpi, 0) AS infs_themes_kpi,
+          is_sale_brand.is_sale_brand,
+          is_fav_brand.is_fav_brand,
+          -- Calculating score final
+          (
+              0.3 * COALESCE(kpis.sales_kpi, 0) +
+              0.2 * CAST(
+                  CASE 
+                    WHEN is_sale_brand.is_sale_brand THEN 1 ELSE 0 
+                  END AS FLOAT
+              ) +
+              0.15 * COALESCE(kpis.univers_kpi, 0) + 
+              0.10 * COALESCE(kpis.infs_themes_kpi, 0) + 
+              0.0005 * COALESCE(fp.conversion_rate, 0) + 
+              0.2 * CAST(
+                  CASE 
+                    WHEN is_fav_brand.is_fav_brand THEN 1 ELSE 0 
+                  END AS FLOAT
+              )
+          ) * 100 AS score_final
+        FROM filtered_products fp
+        LEFT JOIN is_sale_brand ON fp.id_product = is_sale_brand.id_product
+        LEFT JOIN is_fav_brand ON fp.id_product = is_fav_brand.id_product
+        LEFT JOIN kpis ON fp.categ->>'id' = kpis.category AND fp.sub_categ->>'id' = kpis.subcategory
+        -- Exclude products already converted by the influencer    
+        WHERE fp.id_product NOT IN (
+          SELECT id_product FROM conversions c 
+          WHERE c.influencer = ${uid} AND id_product IS NOT NULL
+        )
+        ORDER BY fp.id_product
       )
-  `;
-  
-  const nextProductQuery = nextProduct ? Prisma.sql`
-  AND (rp.score_final < ${Number(nextScore)} OR (rp.score_final = ${Number(nextScore)} AND rp.id_product > ${nextProduct}))
-` : Prisma.empty;
+    `
+    
+    const nextProductQuery = nextProduct ? Prisma.sql`
+      WHERE (sp.score_final < ${Number(nextScore)} OR (sp.score_final = ${Number(nextScore)} AND sp.id_product > ${nextProduct}))
+    ` : Prisma.empty;
 
-baseQuery = Prisma.sql`
-  ${baseQuery}
-  SELECT rp.* FROM ranked_products rp
-  WHERE rp.row_num <= 10
-  ${nextProductQuery}
-  ORDER BY rp.score_final DESC, rp.id_product ASC
-  LIMIT ${Number(set)};
-`;
-  
+    baseQuery = Prisma.sql`${baseQuery} 
+      SELECT sp.* FROM scored_products sp
+      ${nextProductQuery} ORDER BY sp.score_final DESC, sp.id_product ASC 
+      LIMIT ${Number(set)};
+    `
     const result = await db.$queryRaw(baseQuery);
 
     const nextParams = result.length === Number(set) ? {

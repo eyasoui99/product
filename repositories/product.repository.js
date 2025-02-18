@@ -793,7 +793,7 @@ const getProductsWithScore = async (data) => {
 
       let baseQuery = Prisma.sql`
       WITH filtered_products AS (
-          SELECT DISTINCT ON (p.url) -- Ensures unique URLs
+          SELECT DISTINCT ON (p.url) 
               p.id_product,
               p.product_name,
               p.image_url,
@@ -861,7 +861,6 @@ const getProductsWithScore = async (data) => {
           COALESCE(kpis.infs_themes_kpi, 0) AS infs_themes_kpi,
           is_sale_brand.is_sale_brand,
           is_fav_brand.is_fav_brand,
-          -- Calculating score final
           (
               0.3 * COALESCE(kpis.sales_kpi, 0) +
               0.2 * CAST(
@@ -882,24 +881,25 @@ const getProductsWithScore = async (data) => {
         LEFT JOIN is_sale_brand ON fp.id_product = is_sale_brand.id_product
         LEFT JOIN is_fav_brand ON fp.id_product = is_fav_brand.id_product
         LEFT JOIN kpis ON fp.categ->>'id' = kpis.category AND fp.sub_categ->>'id' = kpis.subcategory
-        -- Exclude products already converted by the influencer    
         WHERE fp.id_product NOT IN (
           SELECT id_product FROM conversions c 
           WHERE c.influencer = ${uid} AND id_product IS NOT NULL
         )
-        ORDER BY fp.id_product
+      ),
+      ranked_products AS (
+        SELECT *,
+               ROW_NUMBER() OVER (PARTITION BY id_sub_categ ORDER BY random()) AS row_num
+        FROM scored_products
       )
+      
+    SELECT sp.* 
+    FROM ranked_products sp
+    WHERE sp.row_num <= 10
+    ORDER BY sp.score_final DESC, sp.id_product ASC
+    LIMIT ${Number(set)};
     `
     
-    const nextProductQuery = nextProduct ? Prisma.sql`
-      WHERE (sp.score_final < ${Number(nextScore)} OR (sp.score_final = ${Number(nextScore)} AND sp.id_product > ${nextProduct}))
-    ` : Prisma.empty;
-
-    baseQuery = Prisma.sql`${baseQuery} 
-      SELECT sp.* FROM scored_products sp
-      ${nextProductQuery} ORDER BY sp.score_final DESC, sp.id_product ASC 
-      LIMIT ${Number(set)};
-    `
+    
     const result = await db.$queryRaw(baseQuery);
 
     const nextParams = result.length === Number(set) ? {

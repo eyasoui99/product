@@ -793,7 +793,7 @@ const getProductsWithScore = async (data) => {
 
       let baseQuery = Prisma.sql`
       WITH filtered_products AS (
-          SELECT DISTINCT ON (p.url) 
+          SELECT DISTINCT ON (p.url) -- Ensures unique URLs
               p.id_product,
               p.product_name,
               p.image_url,
@@ -804,7 +804,6 @@ const getProductsWithScore = async (data) => {
               p.conversion_rate,
               p.is_image_valid,
               p.season,
-              p.price,
               p.url,
               jsonb_build_object('id', p.id_categ, 'category_name', cat.category_name) AS categ,
               jsonb_build_object('id', p.id_sub_categ, 'subcategory_name', subcat.sub_categ_name) AS sub_categ,
@@ -861,6 +860,7 @@ const getProductsWithScore = async (data) => {
           COALESCE(kpis.infs_themes_kpi, 0) AS infs_themes_kpi,
           is_sale_brand.is_sale_brand,
           is_fav_brand.is_fav_brand,
+          -- Calculating score final
           (
               0.3 * COALESCE(kpis.sales_kpi, 0) +
               0.2 * CAST(
@@ -881,25 +881,34 @@ const getProductsWithScore = async (data) => {
         LEFT JOIN is_sale_brand ON fp.id_product = is_sale_brand.id_product
         LEFT JOIN is_fav_brand ON fp.id_product = is_fav_brand.id_product
         LEFT JOIN kpis ON fp.categ->>'id' = kpis.category AND fp.sub_categ->>'id' = kpis.subcategory
+        -- Exclude products already converted by the influencer    
         WHERE fp.id_product NOT IN (
           SELECT id_product FROM conversions c 
           WHERE c.influencer = ${uid} AND id_product IS NOT NULL
         )
+        ORDER BY fp.id_product
       ),
-      ranked_products AS (
-        SELECT *,
-               ROW_NUMBER() OVER (PARTITION BY id_sub_categ ORDER BY random()) AS row_num
-        FROM scored_products
+          ranked_products AS (
+          SELECT *,
+              ROW_NUMBER() OVER (PARTITION BY id_sub_categ ORDER BY id_product ASC) AS row_num
+          FROM scored_products
       )
-      
-    SELECT sp.* 
-    FROM ranked_products sp
-    WHERE sp.row_num <= 10
-    ORDER BY sp.score_final DESC, sp.id_product ASC
-    LIMIT ${Number(set)};
-    `
-    
-    
+      `;
+  
+      const nextProductQuery = nextProduct ? Prisma.sql`
+          AND (ranked_products.score_final < ${Number(nextScore)} 
+              OR (ranked_products.score_final = ${Number(nextScore)} 
+                  AND ranked_products.id_product > ${nextProduct}))
+      ` : Prisma.empty;
+  
+      baseQuery = Prisma.sql`${baseQuery} 
+          SELECT * 
+          FROM ranked_products
+          WHERE row_num <= 10
+          ${nextProductQuery}
+          ORDER BY score_final DESC, id_product ASC 
+          LIMIT ${Number(set)};
+      `;
     const result = await db.$queryRaw(baseQuery);
 
     const nextParams = result.length === Number(set) ? {

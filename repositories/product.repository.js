@@ -803,6 +803,7 @@ const getProductsWithScore = async (data) => {
               p.total_sales,
               p.conversion_rate,
               p.is_image_valid,
+              p.price,
               p.season,
               p.url,
               jsonb_build_object('id', p.id_categ, 'category_name', cat.category_name) AS categ,

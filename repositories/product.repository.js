@@ -871,7 +871,7 @@ const getProductsWithScore = async (data) => {
               ) +
               0.15 * COALESCE(kpis.univers_kpi, 0) + 
               0.10 * COALESCE(kpis.infs_themes_kpi, 0) + 
-              0.0005 * COALESCE(fp.conversion_rate, 0) + 
+              0.001 * COALESCE(fp.conversion_rate, 0) + 
               0.2 * CAST(
                   CASE 
                     WHEN is_fav_brand.is_fav_brand THEN 1 ELSE 0 

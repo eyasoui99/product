@@ -864,13 +864,13 @@ const getProductsWithScore = async (data) => {
           -- Calculating score final
           (
               0.3 * COALESCE(kpis.sales_kpi, 0) +
-              0.2 * CAST(
+              0.1 * CAST(
                   CASE 
                     WHEN is_sale_brand.is_sale_brand THEN 1 ELSE 0 
                   END AS FLOAT
               ) +
-              0.15 * COALESCE(kpis.univers_kpi, 0) + 
-              0.10 * COALESCE(kpis.infs_themes_kpi, 0) + 
+              0.2 * COALESCE(kpis.univers_kpi, 0) + 
+              0.1 * COALESCE(kpis.infs_themes_kpi, 0) + 
               0.001 * COALESCE(fp.conversion_rate, 0) + 
               0.2 * CAST(
                   CASE 
@@ -891,7 +891,7 @@ const getProductsWithScore = async (data) => {
       ),
           ranked_products AS (
           SELECT *,
-              ROW_NUMBER() OVER (PARTITION BY id_sub_categ ORDER BY id_product ASC) AS row_num
+              ROW_NUMBER() OVER (PARTITION BY id_sub_categ ORDER BY score_final DESC) AS row_num
           FROM scored_products
       )
       `;
